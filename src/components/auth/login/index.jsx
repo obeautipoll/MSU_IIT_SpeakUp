@@ -13,6 +13,16 @@ const requiredDomain = "@g.msuiit.edu.ph";
 
 const resolveRouteByRole = (role) => ROLE_ROUTE_MAP[role?.toLowerCase()] || "/dashboard";
 
+const requiredDomainLower = requiredDomain.toLowerCase();
+
+const buildStoredUser = (user, role) => ({
+  uid: user?.uid || '',
+  email: user?.email || '',
+  displayName: user?.displayName || '',
+  photoURL: user?.photoURL || '',
+  role,
+});
+
 const Login = () => {
   const navigate = useNavigate();
   const { userLoggedIn } = useAuth() || {}; // Safe destructure
@@ -40,18 +50,21 @@ const Login = () => {
 
     try {
       const user = await doSignInWithGoogle();
-      const role = user?.role || 'student';
+      const rawRole = user?.role || 'student';
+      const role = rawRole.toLowerCase();
 
       // Only students require domain restriction
-      if (role === 'student' && !user.email?.endsWith(requiredDomain)) {
+      const emailMatchesDomain = (user.email || '').toLowerCase().endsWith(requiredDomainLower);
+      if (role === 'student' && !emailMatchesDomain) {
         setErrorMessage(`Students must log in with an institutional email: ${requiredDomain}`);
-        setIsSigningIn(false);
         return;
       }
 
-      // Store user info
-      localStorage.setItem('token', 'mockToken123');
-      localStorage.setItem('user', JSON.stringify(user));
+      // Store only the safe subset to avoid circular JSON errors from Firebase user objects
+      const sanitizedUser = buildStoredUser(user, rawRole);
+      const token = user?.stsTokenManager?.accessToken || 'mockToken123';
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(sanitizedUser));
 
       navigate(resolveRouteByRole(role));
     } catch (err) {
@@ -67,6 +80,7 @@ const Login = () => {
           ? `Login failed. Must use institutional email: ${requiredDomain}`
           : 'Something went wrong with Google Sign-In. Check pop-up settings.'
       );
+    } finally {
       setIsSigningIn(false);
     }
   };
